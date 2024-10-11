@@ -6,15 +6,19 @@ import lombok.Getter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+
 @Service
 public class AccountsService {
 
   @Getter
   private final AccountsRepository accountsRepository;
+  private final NotificationService notificationService;
 
   @Autowired
-  public AccountsService(AccountsRepository accountsRepository) {
+  public AccountsService(AccountsRepository accountsRepository, NotificationService notificationService) {
     this.accountsRepository = accountsRepository;
+    this.notificationService = notificationService;
   }
 
   public void createAccount(Account account) {
@@ -23,5 +27,29 @@ public class AccountsService {
 
   public Account getAccount(String accountId) {
     return this.accountsRepository.getAccount(accountId);
+  }
+
+  public synchronized void transferMoney(String accountFromId, String accountToId, BigDecimal amount) {
+
+    if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+      throw new IllegalArgumentException("Transfer amount must be positive");
+    }
+
+    Account accountFrom = this.accountsRepository.getAccount(accountFromId);
+    Account accountTo = this.accountsRepository.getAccount(accountToId);
+
+    synchronized (accountFrom) {
+      synchronized (accountTo) {
+        if (accountFrom.getBalance().compareTo(amount) < 0) {
+          throw new IllegalArgumentException("Insufficient balance");
+        }
+
+        accountFrom.setBalance(accountFrom.getBalance().subtract(amount));
+        accountTo.setBalance(accountTo.getBalance().add(amount));
+
+        this.notificationService.notifyAboutTransfer(accountFrom, "Debited amount: " + amount + " from account: " + accountFromId);
+        this.notificationService.notifyAboutTransfer(accountTo, "Credited amount: " + amount + " to account: " + accountToId);
+      }
+    }
   }
 }
